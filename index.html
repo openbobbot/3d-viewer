@@ -8,7 +8,6 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #1d1f21; overflow: hidden; font-family: system-ui, sans-serif; color: #c5c8c6; }
   canvas { display: block; }
-
   #info {
     position: absolute; top: 14px; left: 14px;
     font-size: 13px;
@@ -17,15 +16,11 @@
     border: 1px solid rgba(255,255,255,0.08);
     line-height: 1.7;
   }
-  #model-name {
-    font-weight: 600; font-size: 15px; margin-bottom: 2px;
-    color: #ffffff;
-  }
+  #model-name { font-weight: 600; font-size: 15px; margin-bottom: 2px; color: #fff; }
   #controls-hint { font-size: 11px; opacity: 0.6; margin-top: 4px; }
-
   #loader {
     position: absolute; top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
+    transform: translate(-50%,-50%);
     font-size: 16px; opacity: 0.7;
     display: flex; flex-direction: column; align-items: center; gap: 12px;
   }
@@ -37,7 +32,6 @@
     animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-
   #toolbar {
     position: absolute; bottom: 16px; left: 50%;
     transform: translateX(-50%);
@@ -52,39 +46,27 @@
   }
   #toolbar button:hover { background: rgba(255,255,255,0.18); }
   #toolbar button.active { background: rgba(100,180,255,0.2); border-color: rgba(100,180,255,0.4); color: #90c8ff; }
-
   #error {
     display: none;
     position: absolute; top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
+    transform: translate(-50%,-50%);
     background: rgba(180,40,40,0.3); border: 1px solid rgba(255,80,80,0.4);
-    padding: 20px 30px; border-radius: 10px; text-align: center;
-    max-width: 400px;
+    padding: 20px 30px; border-radius: 10px; text-align: center; max-width: 400px;
   }
   #error h3 { color: #ff8080; margin-bottom: 8px; }
   #error p { font-size: 13px; opacity: 0.8; }
 </style>
 </head>
 <body>
-
 <div id="info">
   <div id="model-name">Loading...</div>
   <div>🖱️ Drag · Scroll · Right-drag pan</div>
   <div id="controls-hint"></div>
 </div>
-
-<div id="loader">
-  <div class="spinner"></div>
-  <div>Loading model...</div>
-</div>
-
-<div id="error">
-  <h3>Model not found</h3>
-  <p id="error-detail">Could not load the requested model.</p>
-</div>
-
+<div id="loader"><div class="spinner"></div><div>Loading model...</div></div>
+<div id="error"><h3>Model not found</h3><p id="error-detail"></p></div>
 <div id="toolbar">
-  <button id="btn-reset" onclick="resetCamera()">⟳ Reset</button>
+  <button onclick="resetCamera()">⟳ Reset</button>
   <button id="btn-wire" onclick="toggleWireframe()">⬡ Wireframe</button>
   <button id="btn-rotate" onclick="toggleAutoRotate()">↻ Auto-Rotate</button>
 </div>
@@ -103,151 +85,158 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 
-let scene, camera, renderer, controls, mesh;
+let scene, camera, renderer, controls;
+let meshes = [];
 let wireframeMode = false;
 let initialCamPos, initialTarget;
 
-// Parse model from URL params
 const params = new URLSearchParams(window.location.search);
 const modelParam = params.get('model') || '';
-
-// Build URL: support full URLs, relative paths, or just a name (loads from models/)
-function resolveModelUrl(param) {
-  if (!param) return null;
-  if (param.startsWith('http')) return param;
-  if (param.endsWith('.stl')) return `models/${param}`;
-  return `models/${param}.stl`;
-}
-
-const modelUrl = resolveModelUrl(modelParam);
 const modelDisplayName = modelParam
   ? modelParam.replace(/^.*\//, '').replace(/\.stl$/i, '').replace(/[-_]/g, ' ')
-  : 'Unknown model';
-
-document.getElementById('model-name').textContent = modelDisplayName;
+  : '';
+document.getElementById('model-name').textContent = modelDisplayName || 'No model';
 
 init();
-if (modelUrl) {
-  loadModel(modelUrl);
-} else {
-  document.getElementById('loader').style.display = 'none';
-  document.getElementById('error').style.display = 'block';
-  document.getElementById('error-detail').textContent = 'No model specified. Add ?model=your-model to the URL.';
-}
+loadScene(modelParam);
 animate();
 
 function init() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x1d1f21);
 
-  camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 50000);
+  camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 50000);
   camera.position.set(200, 180, 200);
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   document.body.appendChild(renderer.domElement);
 
-  // Lighting
-  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-
+  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
   const key = new THREE.DirectionalLight(0xffffff, 1.0);
-  key.position.set(200, 400, 200);
-  key.castShadow = true;
+  key.position.set(200, 400, 200); key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
   scene.add(key);
-
   const fill = new THREE.DirectionalLight(0xb0c8ff, 0.35);
-  fill.position.set(-200, 100, -100);
-  scene.add(fill);
-
+  fill.position.set(-200, 100, -100); scene.add(fill);
   const rim = new THREE.DirectionalLight(0xfff0e0, 0.2);
-  rim.position.set(0, -100, -200);
-  scene.add(rim);
+  rim.position.set(0, -100, -200); scene.add(rim);
 
-  // Ground grid
-  const grid = new THREE.GridHelper(1000, 50, 0x383838, 0x2a2a2a);
-  scene.add(grid);
+  scene.add(new THREE.GridHelper(1000, 50, 0x383838, 0x2a2a2a));
 
-  // Shadow plane (invisible, just catches shadows)
-  const planeGeo = new THREE.PlaneGeometry(2000, 2000);
-  const planeMat = new THREE.ShadowMaterial({ opacity: 0.25 });
-  const plane = new THREE.Mesh(planeGeo, planeMat);
-  plane.rotation.x = -Math.PI / 2;
-  plane.receiveShadow = true;
-  scene.add(plane);
+  const shadowPlane = new THREE.Mesh(
+    new THREE.PlaneGeometry(2000, 2000),
+    new THREE.ShadowMaterial({ opacity: 0.2 })
+  );
+  shadowPlane.rotation.x = -Math.PI / 2;
+  shadowPlane.receiveShadow = true;
+  scene.add(shadowPlane);
 
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.07;
   controls.autoRotate = false;
   controls.autoRotateSpeed = 1.5;
-  controls.minDistance = 10;
-  controls.maxDistance = 10000;
 
   window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(innerWidth, innerHeight);
   });
 }
 
-function loadModel(url) {
-  const loader = new STLLoader();
-  loader.load(url,
-    (geometry) => {
-      geometry.computeVertexNormals();
+async function loadScene(modelParam) {
+  if (!modelParam) {
+    showError('No model specified. Add ?model=name to the URL.');
+    return;
+  }
 
-      const material = new THREE.MeshStandardMaterial({
-        color: 0xc4915a,
-        metalness: 0.05,
-        roughness: 0.65,
+  // Check for multi-part manifest
+  const baseName = modelParam.replace(/\.stl$/i, '');
+  const manifestUrl = `models/${baseName}.manifest.json`;
+
+  try {
+    const res = await fetch(manifestUrl);
+    if (res.ok) {
+      const manifest = await res.json();
+      await loadMultiPart(baseName, manifest);
+    } else {
+      // Single STL fallback
+      const url = modelParam.startsWith('http') ? modelParam
+        : modelParam.endsWith('.stl') ? `models/${modelParam}` : `models/${modelParam}.stl`;
+      await loadSingleSTL(url, { color: '#c4915a', metalness: 0.05, roughness: 0.65 });
+    }
+  } catch(e) {
+    showError(`Failed to load model: ${e.message}`);
+  }
+
+  document.getElementById('loader').style.display = 'none';
+  fitCamera();
+}
+
+function loadSingleSTL(url, matProps) {
+  return new Promise((resolve, reject) => {
+    new STLLoader().load(url, (geo) => {
+      geo.computeVertexNormals();
+      const mat = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(matProps.color || '#c4915a'),
+        metalness: matProps.metalness ?? 0.05,
+        roughness: matProps.roughness ?? 0.65,
       });
-
-      mesh = new THREE.Mesh(geometry, material);
+      const mesh = new THREE.Mesh(geo, mat);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
-
-      // Center + sit on ground plane
-      geometry.computeBoundingBox();
-      const box = geometry.boundingBox;
-      const center = new THREE.Vector3();
-      box.getCenter(center);
-      const size = new THREE.Vector3();
-      box.getSize(size);
-
-      mesh.position.set(-center.x, -box.min.y, -center.z);
       scene.add(mesh);
+      meshes.push(mesh);
+      resolve();
+    }, undefined, reject);
+  });
+}
 
-      // Auto-fit camera
-      const maxDim = Math.max(size.x, size.y, size.z);
-      const dist = maxDim * 2.2;
-      camera.position.set(dist * 0.8, dist * 0.7, dist * 0.8);
-      controls.target.set(0, size.y / 2, 0);
-      controls.update();
+async function loadMultiPart(baseName, manifest) {
+  const loaderEl = document.querySelector('#loader div:last-child');
+  const total = manifest.parts.length;
+  for (let i = 0; i < total; i++) {
+    const part = manifest.parts[i];
+    loaderEl.textContent = `Loading parts... ${i + 1}/${total}`;
+    const url = `models/${baseName}-parts/${part.module}.stl`;
+    await loadSingleSTL(url, part);
+  }
+}
 
-      initialCamPos = camera.position.clone();
-      initialTarget = controls.target.clone();
+function fitCamera() {
+  if (meshes.length === 0) return;
+  const box = new THREE.Box3();
+  meshes.forEach(m => box.expandByObject(m));
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  const maxDim = Math.max(size.x, size.y, size.z);
 
-      document.getElementById('loader').style.display = 'none';
-      document.getElementById('controls-hint').textContent =
-        `${geometry.attributes.position.count.toLocaleString()} verts`;
-    },
-    (progress) => {
-      if (progress.total) {
-        const pct = Math.round(progress.loaded / progress.total * 100);
-        document.querySelector('#loader div:last-child').textContent = `Loading... ${pct}%`;
-      }
-    },
-    (err) => {
-      document.getElementById('loader').style.display = 'none';
-      document.getElementById('error').style.display = 'block';
-      document.getElementById('error-detail').textContent = `Could not load: ${url}`;
-      console.error(err);
-    }
-  );
+  // Sit on ground: shift so bottom = y=0
+  const yOffset = -box.min.y;
+  meshes.forEach(m => m.position.y += yOffset);
+
+  const dist = maxDim * 2.2;
+  camera.position.set(dist * 0.8, dist * 0.7, dist * 0.8);
+  controls.target.set(center.x, center.y + yOffset, center.z);
+  controls.update();
+
+  initialCamPos = camera.position.clone();
+  initialTarget = controls.target.clone();
+
+  const totalVerts = meshes.reduce((s, m) => s + m.geometry.attributes.position.count, 0);
+  document.getElementById('controls-hint').textContent = `${totalVerts.toLocaleString()} verts · ${meshes.length} part${meshes.length > 1 ? 's' : ''}`;
+}
+
+function showError(msg) {
+  document.getElementById('loader').style.display = 'none';
+  document.getElementById('error').style.display = 'block';
+  document.getElementById('error-detail').textContent = msg;
 }
 
 function animate() {
@@ -262,14 +251,11 @@ window.resetCamera = () => {
   controls.target.copy(initialTarget);
   controls.update();
 };
-
 window.toggleWireframe = () => {
-  if (!mesh) return;
   wireframeMode = !wireframeMode;
-  mesh.material.wireframe = wireframeMode;
+  meshes.forEach(m => m.material.wireframe = wireframeMode);
   document.getElementById('btn-wire').classList.toggle('active', wireframeMode);
 };
-
 window.toggleAutoRotate = () => {
   controls.autoRotate = !controls.autoRotate;
   document.getElementById('btn-rotate').classList.toggle('active', controls.autoRotate);

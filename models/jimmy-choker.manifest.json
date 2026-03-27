@@ -1,0 +1,8 @@
+{
+  "parts": [
+    {"module": "band",        "color": "#141414", "metalness": 0.0, "roughness": 0.85},
+    {"module": "studs",       "color": "#d4d4df", "metalness": 0.75, "roughness": 0.25},
+    {"module": "clasp",       "color": "#c0c0cc", "metalness": 0.75, "roughness": 0.25},
+    {"module": "heart_charm", "color": "#ff2255", "metalness": 0.0,  "roughness": 0.45}
+  ]
+}
